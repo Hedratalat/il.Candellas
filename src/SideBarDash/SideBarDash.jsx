@@ -5,7 +5,7 @@ export default function SideBarDash({ isOpen, setIsOpen }) {
   const navItems = [
     { to: "addProducts", label: "Add Products" },
     { to: "productsManagement", label: "Manage Products" },
-    // { to: "userDash", label: "Users" },
+    { to: "shipping", label: "Shipping" },
     { to: "ordersDah", label: "Orders" },
     { to: "feedback", label: "Feedback" },
     { to: "message", label: "Message" },
@@ -13,7 +13,6 @@ export default function SideBarDash({ isOpen, setIsOpen }) {
 
   return (
     <>
-      {/* الخلفية الشفافة عند فتح القائمة على الموبايل */}
       {isOpen && (
         <div
           onClick={() => setIsOpen(false)}
@@ -21,14 +20,12 @@ export default function SideBarDash({ isOpen, setIsOpen }) {
         ></div>
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed lg:static top-0 left-0 min-h-screen bg-terracottaDark text-cream shadow-xl w-64 p-6 
           flex flex-col overflow-y-auto transition-transform duration-300 z-50 border-r border-beige/40
           ${isOpen ? "translate-x-0" : "-translate-x-full"} 
           lg:translate-x-0`}
       >
-        {/* زر الإغلاق للموبايل */}
         <button
           onClick={() => setIsOpen(false)}
           className="lg:hidden absolute top-4 right-4 text-cream hover:text-warmWhite transition"

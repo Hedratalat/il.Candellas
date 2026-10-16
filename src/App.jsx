@@ -4,6 +4,7 @@ import { Toaster } from "react-hot-toast";
 import ButtonScroll from "./ButtonScroll/ButtonScroll";
 import ProtectedRoute from "./pages/ProtectedRoute";
 import "./App.css";
+import ShippingDash from "./pages/ShippingDash";
 
 // Lazy load pages
 const Home = lazy(() => import("./pages/Home"));
@@ -18,10 +19,8 @@ const FeedbackDash = lazy(() => import("./pages/FeedbackDash"));
 const MessageDash = lazy(() => import("./pages/MessageDash"));
 const Favorites = lazy(() => import("./pages/Favorites"));
 const Cart = lazy(() => import("./pages/Cart"));
-// const Checkout = lazy(() => import("./pages/Checkout"));
-const UserDash = lazy(() => import("./pages/UserDash"));
+const Checkout = lazy(() => import("./pages/Checkout"));
 const OrdersDah = lazy(() => import("./pages/OrdersDash"));
-const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const ProductsManagement = lazy(() => import("./pages/ProductsManagement"));
 
 // Spinner component
@@ -39,14 +38,13 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/verifyEmail" element={<VerifyEmail />} />
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/products" element={<Products />} />
             <Route path="/favorites" element={<Favorites />} />
             <Route path="/cart" element={<Cart />} />
-            {/* <Route path="/checkout" element={<Checkout />} /> */}
+            <Route path="/checkout" element={<Checkout />} />
 
             <Route
               path="/dashboard"
@@ -62,7 +60,7 @@ function App() {
                 path="productsManagement"
                 element={<ProductsManagement />}
               />
-              <Route path="userDash" element={<UserDash />} />
+              <Route path="shipping" element={<ShippingDash />} />
               <Route path="ordersDah" element={<OrdersDah />} />
               <Route path="feedback" element={<FeedbackDash />} />
               <Route path="message" element={<MessageDash />} />

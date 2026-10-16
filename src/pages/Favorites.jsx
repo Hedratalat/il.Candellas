@@ -8,7 +8,6 @@ import {
   query,
   where,
   getDocs,
-  addDoc,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import Navbar from "../Navbar/Navbar";
@@ -16,6 +15,7 @@ import { Link } from "react-router-dom";
 import { Heart, X, PackageOpen, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 import Footer from "../Footer/Footer";
+import AddToCartModal from "../AddToCartModal/AddToCartModal";
 
 const arrowVariants = {
   initial: { x: 0 },
@@ -24,9 +24,10 @@ const arrowVariants = {
 
 export default function Favorites() {
   const [favorites, setFavorites] = useState([]);
+  const [liveProducts, setLiveProducts] = useState({}); // { productId: productData }
   const [selectedImage, setSelectedImage] = useState(null);
+  const [cartProduct, setCartProduct] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [cart, setCart] = useState([]);
   const itemsPerPage = 9;
 
   useEffect(() => {
@@ -47,21 +48,16 @@ export default function Favorites() {
     return () => unsubscribeAuth();
   }, []);
 
-  // 🛒 جلب السلة الخاصة بالمستخدم الحالي
+  // 📦 بيانات المنتجات الحالية (الألوان، الباقة، المخزون، أيام التصنيع)
   useEffect(() => {
-    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
-      if (user) {
-        const cartRef = collection(db, "users", user.uid, "cart");
-        const unsubscribeCart = onSnapshot(cartRef, (snapshot) => {
-          setCart(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        });
-        return () => unsubscribeCart();
-      } else {
-        setCart([]);
-      }
+    const unsubscribe = onSnapshot(collection(db, "Products"), (snapshot) => {
+      const map = {};
+      snapshot.docs.forEach((d) => {
+        map[d.id] = { ...d.data(), id: d.id };
+      });
+      setLiveProducts(map);
     });
-
-    return () => unsubscribeAuth();
+    return () => unsubscribe();
   }, []);
 
   // 🧡 إزالة من المفضلات
@@ -88,35 +84,15 @@ export default function Favorites() {
     }
   };
 
-  const handleToggleCart = async (product) => {
-    const user = auth.currentUser;
-    if (!user) {
-      toast.error("Please login to add items to your cart");
+  const handleOpenCart = (fav) => {
+    const live = liveProducts[fav.id];
+    if (!live) {
+      toast.error("This product is no longer available");
       return;
     }
-
-    const cartRef = collection(db, "users", user.uid, "cart");
-    const q = query(cartRef, where("id", "==", product.id));
-    const existing = await getDocs(q);
-
-    if (!existing.empty) {
-      const cartDoc = existing.docs[0];
-      await deleteDoc(doc(db, "users", user.uid, "cart", cartDoc.id));
-      toast.error("Removed from cart");
-    } else {
-      await addDoc(cartRef, {
-        id: product.id,
-        name: product.name,
-        description: product.description,
-        imageUrl: product.imageUrl,
-        price: product.price,
-        category: product.category || "",
-      });
-      toast.success("Added to cart");
-    }
+    if (live.outOfStock) return;
+    setCartProduct({ ...live, numericPrice: Number(live.price) || 0 });
   };
-
-  const isInCart = (productId) => cart.some((item) => item.id === productId);
 
   // 📄 Pagination logic
   const totalPages = Math.ceil(favorites.length / itemsPerPage);
@@ -143,70 +119,87 @@ export default function Favorites() {
         {/* Favorites Grid */}
         <div className="mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {currentItems.length > 0 ? (
-            currentItems.map((product, index) => (
-              <motion.div
-                key={product.id}
-                initial={{ opacity: 0, y: 50 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{
-                  delay: index * 0.1,
-                  duration: 0.6,
-                  ease: "easeOut",
-                }}
-                viewport={{ once: true }}
-                className="group relative bg-warmWhite rounded-2xl shadow-md overflow-hidden border border-border hover:shadow-lg transition-all duration-300 flex flex-col"
-              >
-                <div
-                  className="relative cursor-pointer"
-                  onClick={() => setSelectedImage(product.imageUrl)}
+            currentItems.map((fav, index) => {
+              const live = liveProducts[fav.id];
+              const product = live ? { ...fav, ...live, id: fav.id } : fav;
+              const days = product.productionDays;
+
+              return (
+                <motion.div
+                  key={fav.id}
+                  initial={{ opacity: 0, y: 50 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{
+                    delay: index * 0.1,
+                    duration: 0.6,
+                    ease: "easeOut",
+                  }}
+                  viewport={{ once: true }}
+                  className="group relative bg-warmWhite rounded-2xl shadow-md overflow-hidden border border-border hover:shadow-lg transition-all duration-300 flex flex-col"
                 >
-                  <img
-                    src={product.imageUrl}
-                    alt={product.name}
-                    className="w-full h-64 object-cover rounded-t-2xl group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <button
-                    className="absolute top-3 right-3 p-3 rounded-full bg-terracotta text-white hover:bg-terracottaDark transition"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveFavorite(product.id);
-                    }}
+                  <div
+                    className="relative cursor-pointer"
+                    onClick={() => setSelectedImage(product.imageUrl)}
                   >
-                    <Heart size={22} />
-                  </button>
-                </div>
-
-                {/* محتوى الكارد */}
-                <div className="flex flex-col justify-between p-5 text-left flex-1">
-                  <div>
-                    <h3 className="text-xl font-semibold text-brown font-playfair">
-                      {product.name}
-                    </h3>
-                    <p className="mt-2 text-warmGray text-sm font-poppins">
-                      {product.description}
-                    </p>
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-between">
-                    <span className="text-lg font-bold text-sage">
-                      {product.price ? `${product.price} BHD` : "N/A"}
-                    </span>
-                    <button
-                      onClick={() => handleToggleCart(product)}
-                      className={`px-4 py-2 rounded-full font-poppins text-sm font-medium transition-all duration-300 ${
-                        isInCart(product.id)
-                          ? "bg-sage text-white hover:bg-green-700"
-                          : "bg-terracotta text-white hover:bg-terracottaDark"
+                    <img
+                      src={product.imageUrl}
+                      alt={product.name}
+                      className={`w-full h-64 object-cover rounded-t-2xl group-hover:scale-105 transition-transform duration-500 ${
+                        product.outOfStock ? "opacity-60" : ""
                       }`}
+                    />
+                    {product.outOfStock && (
+                      <span className="absolute top-3 left-3 bg-terracotta text-white text-xs font-medium px-3 py-1 rounded-full">
+                        Out of Stock
+                      </span>
+                    )}
+                    <button
+                      className="absolute top-3 right-3 p-3 rounded-full bg-terracotta text-white hover:bg-terracottaDark transition"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveFavorite(fav.id);
+                      }}
                     >
-                      {isInCart(product.id)
-                        ? "Remove from Cart"
-                        : "Add to Cart"}
+                      <Heart size={22} />
                     </button>
                   </div>
-                </div>
-              </motion.div>
-            ))
+
+                  {/* محتوى الكارد */}
+                  <div className="flex flex-col justify-between p-5 text-left flex-1">
+                    <div>
+                      <h3 className="text-xl font-semibold text-brown font-playfair">
+                        {product.name}
+                      </h3>
+                      <p className="mt-2 text-warmGray text-sm font-poppins">
+                        {product.description}
+                      </p>
+                      {typeof days === "number" && days > 0 && (
+                        <p className="mt-2 text-sage text-xs font-medium">
+                          Ready in {days} {days === 1 ? "day" : "days"}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="mt-5 flex items-center justify-between">
+                      <span className="text-lg font-bold text-sage">
+                        {product.price ? `${product.price} BHD` : "N/A"}
+                      </span>
+                      <button
+                        onClick={() => handleOpenCart(fav)}
+                        disabled={product.outOfStock}
+                        className={`px-4 py-2 rounded-full font-poppins text-sm font-medium transition-all duration-300 ${
+                          product.outOfStock
+                            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                            : "bg-terracotta text-white hover:bg-terracottaDark"
+                        }`}
+                      >
+                        {product.outOfStock ? "Out of Stock" : "Add to Cart"}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })
           ) : (
             <div className="col-span-full flex flex-col items-center justify-center min-h-[40vh] text-center">
               <motion.div
@@ -286,6 +279,14 @@ export default function Favorites() {
               Next
             </button>
           </div>
+        )}
+
+        {/* Add to Cart Popup */}
+        {cartProduct && (
+          <AddToCartModal
+            product={cartProduct}
+            onClose={() => setCartProduct(null)}
+          />
         )}
 
         {/* Image Popup */}

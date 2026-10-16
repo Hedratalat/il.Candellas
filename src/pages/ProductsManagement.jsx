@@ -9,20 +9,33 @@ import {
 } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
-import { Edit, X } from "lucide-react";
+import { Edit, X, Plus, Trash2 } from "lucide-react";
+
+const emptyEdit = {
+  id: null,
+  name: "",
+  description: "",
+  price: "",
+  category: "",
+  imageUrl: "",
+  file: null,
+  order: "",
+  outOfStock: false,
+  productionDays: "",
+  bundleEnabled: false,
+  bundleItemName: "",
+  bundleExtraPrice: "",
+};
+
+const editInput = "border border-slate-300 rounded-xl px-3 py-2 text-sm";
 
 export default function ProductsManagement() {
   const [products, setProducts] = useState([]);
   const [selectedDelete, setSelectedDelete] = useState(null);
   const [selectedEdit, setSelectedEdit] = useState(null);
-  const [editData, setEditData] = useState({
-    name: "",
-    description: "",
-    price: "",
-    category: "",
-    imageUrl: "",
-    file: null,
-  });
+  const [editData, setEditData] = useState(emptyEdit);
+  const [editColors, setEditColors] = useState([]); // [{ id, name, imageUrl }]
+  const [saving, setSaving] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -34,6 +47,14 @@ export default function ProductsManagement() {
     });
     return () => unsubscribe();
   }, []);
+
+  // ترتيب المنتجات: order الأصغر الأول، اللي ملوش order في الآخر
+  const sortedProducts = [...products].sort((a, b) => {
+    const ao = typeof a.order === "number" ? a.order : Infinity;
+    const bo = typeof b.order === "number" ? b.order : Infinity;
+    if (ao !== bo) return ao - bo;
+    return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+  });
 
   const handleDelete = async (id) => {
     try {
@@ -48,14 +69,30 @@ export default function ProductsManagement() {
 
   const handleEdit = (product) => {
     setEditData({
-      name: product.name,
-      description: product.description,
-      price: product.price,
-      category: product.category,
-      imageUrl: product.imageUrl,
-      file: null,
       id: product.id,
+      name: product.name || "",
+      description: product.description || "",
+      price: product.price ?? "",
+      category: product.category || "",
+      imageUrl: product.imageUrl || "",
+      file: null,
+      order: typeof product.order === "number" ? product.order : "",
+      outOfStock: !!product.outOfStock,
+      productionDays:
+        typeof product.productionDays === "number"
+          ? product.productionDays
+          : "",
+      bundleEnabled: !!product.bundle?.enabled,
+      bundleItemName: product.bundle?.itemName || "",
+      bundleExtraPrice: product.bundle?.extraPrice ?? "",
     });
+    setEditColors(
+      (product.colors || []).map((c, i) => ({
+        id: `${product.id}-${i}`,
+        name: c.name,
+        imageUrl: c.imageUrl,
+      })),
+    );
     setSelectedEdit(product.id);
   };
 
@@ -78,12 +115,65 @@ export default function ProductsManagement() {
     }
   };
 
+  // ---- Colors (edit) ----
+  const addColor = () => {
+    setEditColors((prev) => [
+      ...prev,
+      { id: `${Date.now()}-${Math.random()}`, name: "", imageUrl: "" },
+    ]);
+  };
+
+  const updateColor = (id, changes) => {
+    setEditColors((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...changes } : c)),
+    );
+  };
+
+  const removeColor = (id) => {
+    setEditColors((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const handleColorFile = async (id, file) => {
+    if (!file) return;
+    setSaving(true);
+    const url = await uploadImageCloudinary(file);
+    if (url) {
+      updateColor(id, { imageUrl: url });
+      toast.success("Color image uploaded");
+    }
+    setSaving(false);
+  };
+
+  const handleEditChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setEditData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  };
+
   const handleSaveEdit = async () => {
+    if (editColors.some((c) => !c.name.trim() || !c.imageUrl)) {
+      toast.error("Each color needs a name and an image.");
+      return;
+    }
+    if (
+      editData.bundleEnabled &&
+      (!editData.bundleItemName.trim() || editData.bundleExtraPrice === "")
+    ) {
+      toast.error("Please fill the bundle item name and extra price.");
+      return;
+    }
+
+    setSaving(true);
     let imageUrl = editData.imageUrl;
 
     if (editData.file) {
       const uploadedUrl = await uploadImageCloudinary(editData.file);
-      if (!uploadedUrl) return;
+      if (!uploadedUrl) {
+        setSaving(false);
+        return;
+      }
       imageUrl = uploadedUrl;
     }
 
@@ -94,22 +184,41 @@ export default function ProductsManagement() {
         price: Number(editData.price),
         category: editData.category,
         imageUrl: imageUrl,
+        order: editData.order === "" ? null : Number(editData.order),
+        outOfStock: editData.outOfStock,
+        productionDays:
+          editData.productionDays === ""
+            ? null
+            : Number(editData.productionDays),
+        colors: editColors.map((c) => ({
+          name: c.name.trim(),
+          imageUrl: c.imageUrl,
+        })),
+        bundle: editData.bundleEnabled
+          ? {
+              enabled: true,
+              itemName: editData.bundleItemName.trim(),
+              extraPrice: Number(editData.bundleExtraPrice),
+            }
+          : { enabled: false },
       });
       toast.success("Product updated successfully!");
       setSelectedEdit(null);
     } catch (error) {
       toast.error("Failed to update product");
+    } finally {
+      setSaving(false);
     }
   };
 
   // Pagination calculations
   const indexOfLastProduct = currentPage * productsPerPage;
   const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
-  const currentProducts = products.slice(
+  const currentProducts = sortedProducts.slice(
     indexOfFirstProduct,
     indexOfLastProduct,
   );
-  const totalPages = Math.ceil(products.length / productsPerPage);
+  const totalPages = Math.ceil(sortedProducts.length / productsPerPage);
 
   return (
     <section className="p-6 md:p-12 min-h-screen">
@@ -127,17 +236,58 @@ export default function ProductsManagement() {
             className="bg-warmWhite rounded-2xl shadow-md p-5 border border-beige flex flex-col justify-between"
           >
             <div>
-              <img
-                src={product.imageUrl}
-                alt={product.name}
-                className="w-full h-40 object-cover rounded-lg mb-3"
-              />
+              <div className="relative">
+                <img
+                  src={product.imageUrl}
+                  alt={product.name}
+                  className={`w-full h-40 object-cover rounded-lg mb-3 ${
+                    product.outOfStock ? "opacity-60" : ""
+                  }`}
+                />
+                {typeof product.order === "number" && (
+                  <span className="absolute top-2 left-2 bg-sage text-white text-xs px-2 py-1 rounded-full">
+                    #{product.order}
+                  </span>
+                )}
+                {product.outOfStock && (
+                  <span className="absolute top-2 right-2 bg-terracotta text-white text-xs px-2 py-1 rounded-full">
+                    Out of Stock
+                  </span>
+                )}
+              </div>
               <h3 className="text-lg font-semibold text-brown font-playfair">
                 {product.name}
               </h3>
               <p className="text-warmGray text-sm">{product.description}</p>
               <p className="text-sage font-bold mt-2">{product.price} BHD</p>
               <p className="text-warmGray text-sm">{product.category}</p>
+
+              {typeof product.productionDays === "number" && (
+                <p className="text-warmGray text-sm mt-1">
+                  Production: {product.productionDays} day(s)
+                </p>
+              )}
+
+              {product.bundle?.enabled && (
+                <p className="text-warmGray text-sm mt-1">
+                  Bundle: +{product.bundle.extraPrice} BHD per extra{" "}
+                  {product.bundle.itemName}
+                </p>
+              )}
+
+              {product.colors?.length > 0 && (
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {product.colors.map((c, i) => (
+                    <img
+                      key={i}
+                      src={c.imageUrl}
+                      alt={c.name}
+                      title={c.name}
+                      className="w-8 h-8 rounded-full object-cover border border-beige"
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 mt-4">
@@ -232,7 +382,7 @@ export default function ProductsManagement() {
               initial={{ scale: 0.8 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.8 }}
-              className="bg-warmWhite rounded-2xl p-6 max-w-sm w-full shadow-lg border border-beige overflow-auto"
+              className="bg-warmWhite rounded-2xl p-6 max-w-md w-full max-h-[90vh] shadow-lg border border-beige overflow-y-auto"
             >
               <h3 className="text-xl font-semibold text-brown font-playfair mb-5">
                 Edit Product
@@ -263,11 +413,10 @@ export default function ProductsManagement() {
                 <label className="text-brown font-medium mb-1">Name</label>
                 <input
                   type="text"
+                  name="name"
                   value={editData.name}
-                  onChange={(e) =>
-                    setEditData({ ...editData, name: e.target.value })
-                  }
-                  className="border border-slate-300 rounded-xl px-3 py-2 text-sm"
+                  onChange={handleEditChange}
+                  className={editInput}
                 />
               </div>
 
@@ -277,27 +426,27 @@ export default function ProductsManagement() {
                   Description
                 </label>
                 <textarea
+                  name="description"
                   value={editData.description}
-                  onChange={(e) =>
-                    setEditData({ ...editData, description: e.target.value })
-                  }
-                  className="border border-slate-300 rounded-xl px-3 py-2 text-sm"
+                  onChange={handleEditChange}
+                  className={editInput}
                   rows={2}
                 />
               </div>
 
               {/* Price */}
               <div className="flex flex-col mb-3">
-                <label className="text-brown font-medium mb-1">Price</label>
+                <label className="text-brown font-medium mb-1">
+                  Price (BHD)
+                </label>
                 <input
                   type="number"
+                  name="price"
                   step="0.01"
                   min="0"
                   value={editData.price}
-                  onChange={(e) =>
-                    setEditData({ ...editData, price: e.target.value })
-                  }
-                  className="border border-slate-300 rounded-xl px-3 py-2 text-sm"
+                  onChange={handleEditChange}
+                  className={editInput}
                 />
               </div>
 
@@ -306,20 +455,161 @@ export default function ProductsManagement() {
                 <label className="text-brown font-medium mb-1">Category</label>
                 <input
                   type="text"
+                  name="category"
                   value={editData.category}
-                  onChange={(e) =>
-                    setEditData({ ...editData, category: e.target.value })
-                  }
-                  className="border border-slate-300 rounded-xl px-3 py-2 text-sm"
+                  onChange={handleEditChange}
+                  className={editInput}
                 />
+              </div>
+
+              {/* Order */}
+              <div className="flex flex-col mb-3">
+                <label className="text-brown font-medium mb-1">
+                  Display Order{" "}
+                  <span className="text-warmGray text-xs">
+                    (1 = first, empty = last)
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  name="order"
+                  min="1"
+                  step="1"
+                  value={editData.order}
+                  onChange={handleEditChange}
+                  className={editInput}
+                />
+              </div>
+
+              {/* Production Days */}
+              <div className="flex flex-col mb-3">
+                <label className="text-brown font-medium mb-1">
+                  Production Time (days)
+                </label>
+                <input
+                  type="number"
+                  name="productionDays"
+                  min="0"
+                  step="1"
+                  value={editData.productionDays}
+                  onChange={handleEditChange}
+                  className={editInput}
+                />
+              </div>
+
+              {/* Out of Stock */}
+              <label className="flex items-center gap-3 text-brown font-medium cursor-pointer mb-4">
+                <input
+                  type="checkbox"
+                  name="outOfStock"
+                  checked={editData.outOfStock}
+                  onChange={handleEditChange}
+                  className="w-5 h-5 accent-terracotta"
+                />
+                Out of Stock
+              </label>
+
+              {/* Colors */}
+              <div className="flex flex-col gap-3 mb-4">
+                <label className="text-brown font-medium">Colors</label>
+
+                {editColors.map((color) => (
+                  <div
+                    key={color.id}
+                    className="flex flex-col gap-2 p-3 rounded-xl border border-beige"
+                  >
+                    <input
+                      type="text"
+                      value={color.name}
+                      onChange={(e) =>
+                        updateColor(color.id, { name: e.target.value })
+                      }
+                      placeholder="Color name"
+                      className={editInput}
+                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) =>
+                          handleColorFile(color.id, e.target.files[0])
+                        }
+                        className="flex-1 min-w-0 border border-slate-300 rounded-xl px-3 py-2 text-xs cursor-pointer"
+                      />
+                      {color.imageUrl && (
+                        <img
+                          src={color.imageUrl}
+                          alt={color.name}
+                          className="w-12 h-12 object-cover rounded-lg border border-beige"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeColor(color.id)}
+                        className="bg-terracotta text-white p-2 rounded-full hover:bg-terracottaDark transition"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={addColor}
+                  className="flex items-center gap-2 w-fit px-4 py-2 rounded-full bg-sage text-white text-sm hover:bg-sageDark transition"
+                >
+                  <Plus size={16} /> Add Color
+                </button>
+              </div>
+
+              {/* Bundle */}
+              <div className="flex flex-col gap-2 p-3 rounded-xl border border-beige mb-2">
+                <label className="flex items-center gap-3 text-brown font-medium cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="bundleEnabled"
+                    checked={editData.bundleEnabled}
+                    onChange={handleEditChange}
+                    className="w-5 h-5 accent-terracotta"
+                  />
+                  Enable Bundle
+                </label>
+                {editData.bundleEnabled && (
+                  <>
+                    <input
+                      type="text"
+                      name="bundleItemName"
+                      value={editData.bundleItemName}
+                      onChange={handleEditChange}
+                      placeholder="Item name (e.g. Candle)"
+                      className={editInput}
+                    />
+                    <input
+                      type="number"
+                      name="bundleExtraPrice"
+                      step="0.01"
+                      min="0"
+                      value={editData.bundleExtraPrice}
+                      onChange={handleEditChange}
+                      placeholder="Price per extra item (BHD)"
+                      className={editInput}
+                    />
+                  </>
+                )}
               </div>
 
               <div className="flex justify-center gap-4 mt-4">
                 <button
                   onClick={handleSaveEdit}
-                  className="bg-sage text-white px-5 py-2 rounded-full hover:bg-sageDark transition"
+                  disabled={saving}
+                  className={`text-white px-5 py-2 rounded-full transition ${
+                    saving
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-sage hover:bg-sageDark"
+                  }`}
                 >
-                  Save
+                  {saving ? "Please wait..." : "Save"}
                 </button>
                 <button
                   onClick={() => setSelectedEdit(null)}

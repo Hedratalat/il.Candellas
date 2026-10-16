@@ -4,8 +4,6 @@ import {
   collection,
   onSnapshot,
   query,
-  orderBy,
-  limit,
   addDoc,
   deleteDoc,
   doc,
@@ -16,8 +14,9 @@ import { db, auth } from "../firebase";
 import { Heart, X, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
+import AddToCartModal from "../AddToCartModal/AddToCartModal";
 
-const toCartItem = (product) => ({
+const toFavItem = (product) => ({
   id: product.id,
   name: product.name,
   description: product.description,
@@ -25,6 +24,14 @@ const toCartItem = (product) => ({
   price: product.price,
   category: product.category || "",
 });
+
+// order الأصغر الأول، واللي ملوش order في الآخر (الأحدث أولاً)
+const sortByOrder = (a, b) => {
+  const ao = typeof a.order === "number" ? a.order : Infinity;
+  const bo = typeof b.order === "number" ? b.order : Infinity;
+  if (ao !== bo) return ao - bo;
+  return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+};
 
 const arrowVariants = {
   initial: { x: 0 },
@@ -34,21 +41,19 @@ const arrowVariants = {
 export default function HomeProducts() {
   const [products, setProducts] = useState([]);
   const [favorites, setFavorites] = useState([]);
-  const [cart, setCart] = useState([]);
   const [selectedImage, setSelectedImage] = useState(null);
-  // جلب آخر 6 منتجات
+  const [cartProduct, setCartProduct] = useState(null);
+
+  // جلب أول 6 منتجات حسب الترتيب
   useEffect(() => {
-    const q = query(
-      collection(db, "Products"),
-      orderBy("createdAt", "desc"),
-      limit(6),
-    );
     const unsubscribe = onSnapshot(
-      q,
+      collection(db, "Products"),
       (snapshot) => {
-        setProducts(
-          snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-        );
+        const data = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setProducts(data.sort(sortByOrder).slice(0, 6));
       },
       (error) => {
         console.warn("Failed to fetch products:", error.message);
@@ -82,32 +87,7 @@ export default function HomeProducts() {
     return () => unsubscribeAuth();
   }, []);
 
-  useEffect(() => {
-    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
-      if (user) {
-        const cartRef = collection(db, "users", user.uid, "cart");
-        const unsubscribeCart = onSnapshot(
-          cartRef,
-          (snapshot) => {
-            setCart(
-              snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-            );
-          },
-          (error) => {
-            console.warn("Failed to fetch cart:", error.message);
-            setCart([]);
-          },
-        );
-        return () => unsubscribeCart();
-      } else {
-        setCart([]);
-      }
-    });
-    return () => unsubscribeAuth();
-  }, []);
-
   const isFav = (productId) => favorites.some((fav) => fav.id === productId);
-  const isInCart = (productId) => cart.some((item) => item.id === productId);
 
   const handleToggleFavorite = async (product) => {
     const user = auth.currentUser;
@@ -122,26 +102,8 @@ export default function HomeProducts() {
       await deleteDoc(doc(db, "users", user.uid, "favorites", favDoc.id));
       toast.error("Removed from favorites");
     } else {
-      await addDoc(favRef, toCartItem(product));
+      await addDoc(favRef, toFavItem(product));
       toast.success("Added to favorites");
-    }
-  };
-
-  const handleToggleCart = async (product) => {
-    const user = auth.currentUser;
-    if (!user) return toast.error("Please login to add items to your cart");
-
-    const cartRef = collection(db, "users", user.uid, "cart");
-    const q = query(cartRef, where("id", "==", product.id));
-    const existing = await getDocs(q);
-
-    if (!existing.empty) {
-      const cartDoc = existing.docs[0];
-      await deleteDoc(doc(db, "users", user.uid, "cart", cartDoc.id));
-      toast.error("Removed from cart");
-    } else {
-      await addDoc(cartRef, toCartItem(product));
-      toast.success("Added to cart");
     }
   };
 
@@ -186,8 +148,15 @@ export default function HomeProducts() {
               <img
                 src={product.imageUrl}
                 alt={product.name}
-                className="w-full h-64 object-cover rounded-t-2xl group-hover:scale-105 transition-transform duration-500"
+                className={`w-full h-64 object-cover rounded-t-2xl group-hover:scale-105 transition-transform duration-500 ${
+                  product.outOfStock ? "opacity-60" : ""
+                }`}
               />
+              {product.outOfStock && (
+                <span className="absolute top-3 left-3 bg-terracotta text-white text-xs font-medium px-3 py-1 rounded-full">
+                  Out of Stock
+                </span>
+              )}
               <button
                 className={`absolute top-3 right-3 p-3 rounded-full backdrop-blur-sm transition-all duration-300 ${
                   isFav(product.id)
@@ -212,6 +181,13 @@ export default function HomeProducts() {
                 <p className="mt-2 text-warmGray text-sm font-poppins">
                   {product.description}
                 </p>
+                {typeof product.productionDays === "number" &&
+                  product.productionDays > 0 && (
+                    <p className="mt-2 text-sage text-xs font-medium font-poppins">
+                      Ready in {product.productionDays}{" "}
+                      {product.productionDays === 1 ? "day" : "days"}
+                    </p>
+                  )}
               </div>
 
               <div className="mt-5 flex items-center justify-between">
@@ -219,14 +195,15 @@ export default function HomeProducts() {
                   {product.price || "N/A"} BHD
                 </span>
                 <button
-                  onClick={() => handleToggleCart(product)}
+                  onClick={() => setCartProduct(product)}
+                  disabled={product.outOfStock}
                   className={`px-4 py-2 rounded-full font-poppins text-sm font-medium transition-all duration-300 ${
-                    isInCart(product.id)
-                      ? "bg-sage text-white hover:bg-green-700"
+                    product.outOfStock
+                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                       : "bg-terracotta text-white hover:bg-terracottaDark"
                   }`}
                 >
-                  {isInCart(product.id) ? "Remove from Cart" : "Add to Cart"}
+                  {product.outOfStock ? "Out of Stock" : "Add to Cart"}
                 </button>
               </div>
             </div>
@@ -259,6 +236,14 @@ export default function HomeProducts() {
           </motion.button>
         </Link>
       </div>
+
+      {/* Add to Cart Popup */}
+      {cartProduct && (
+        <AddToCartModal
+          product={cartProduct}
+          onClose={() => setCartProduct(null)}
+        />
+      )}
 
       {/* Image Popup */}
       {selectedImage && (

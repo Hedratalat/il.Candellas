@@ -15,12 +15,21 @@ import Navbar from "../Navbar/Navbar";
 import { Heart, PackageOpen, X } from "lucide-react";
 import toast from "react-hot-toast";
 import Footer from "../Footer/Footer";
+import AddToCartModal from "../AddToCartModal/AddToCartModal";
 
 function parsePrice(value) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number") return value;
   const num = parseFloat(String(value).replace(/[^\d.]/g, ""));
   return isNaN(num) ? null : num;
+}
+
+// order الأصغر الأول، واللي ملوش order في الآخر (الأحدث أولاً)
+function sortByOrder(a, b) {
+  const ao = typeof a.order === "number" ? a.order : Infinity;
+  const bo = typeof b.order === "number" ? b.order : Infinity;
+  if (ao !== bo) return ao - bo;
+  return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
 }
 
 export default function Products() {
@@ -31,7 +40,7 @@ export default function Products() {
   const [priceFilter, setPriceFilter] = useState("");
   const [selectedImage, setSelectedImage] = useState(null);
   const [categories, setCategories] = useState([]);
-  const [cart, setCart] = useState([]);
+  const [cartProduct, setCartProduct] = useState(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -101,51 +110,6 @@ export default function Products() {
     }
   };
 
-  useEffect(() => {
-    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
-      if (user) {
-        const cartRef = collection(db, "users", user.uid, "cart");
-        const unsubscribeCart = onSnapshot(cartRef, (snapshot) => {
-          setCart(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        });
-        return () => unsubscribeCart();
-      } else {
-        setCart([]);
-      }
-    });
-
-    return () => unsubscribeAuth();
-  }, []);
-
-  // 🛒 إضافة / إزالة من السلة
-  const handleToggleCart = async (product) => {
-    const user = auth.currentUser;
-    if (!user) {
-      toast.error("Please login to add items to your cart");
-      return;
-    }
-
-    const cartRef = collection(db, "users", user.uid, "cart");
-    const q = query(cartRef, where("id", "==", product.id));
-    const existing = await getDocs(q);
-
-    if (!existing.empty) {
-      const cartDoc = existing.docs[0];
-      await deleteDoc(doc(db, "users", user.uid, "cart", cartDoc.id));
-      toast.error("Removed from cart");
-    } else {
-      await addDoc(cartRef, {
-        id: product.id,
-        name: product.name,
-        description: product.description,
-        imageUrl: product.imageUrl,
-        price: product.numericPrice,
-        category: product.category || "",
-      });
-      toast.success("Added to cart");
-    }
-  };
-
   const filtered = useMemo(() => {
     let result = [...products];
 
@@ -170,7 +134,7 @@ export default function Products() {
       });
     }
 
-    return result;
+    return result.sort(sortByOrder);
   }, [search, categoryFilter, priceFilter, products]);
   // Pagination
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
@@ -182,7 +146,6 @@ export default function Products() {
   const prevPage = () => currentPage > 1 && setCurrentPage(currentPage - 1);
 
   const isFav = (productId) => favorites.some((fav) => fav.id === productId);
-  const isInCart = (productId) => cart.some((item) => item.id === productId);
 
   return (
     <>
@@ -257,8 +220,15 @@ export default function Products() {
                   <img
                     src={product.imageUrl}
                     alt={product.name}
-                    className="w-full h-64 object-cover rounded-t-2xl group-hover:scale-105 transition-transform duration-500"
+                    className={`w-full h-64 object-cover rounded-t-2xl group-hover:scale-105 transition-transform duration-500 ${
+                      product.outOfStock ? "opacity-60" : ""
+                    }`}
                   />
+                  {product.outOfStock && (
+                    <span className="absolute top-3 left-3 bg-terracotta text-white text-xs font-medium px-3 py-1 rounded-full">
+                      Out of Stock
+                    </span>
+                  )}
                   <button
                     className={`absolute top-3 right-3 p-3 rounded-full backdrop-blur-sm transition-all duration-300 ${
                       isFav(product.id)
@@ -283,6 +253,13 @@ export default function Products() {
                     <p className="mt-2 text-warmGray text-sm font-poppins">
                       {product.description}
                     </p>
+                    {typeof product.productionDays === "number" &&
+                      product.productionDays > 0 && (
+                        <p className="mt-2 text-sage text-xs font-medium">
+                          Ready in {product.productionDays}{" "}
+                          {product.productionDays === 1 ? "day" : "days"}
+                        </p>
+                      )}
                   </div>
 
                   <div className="mt-5 flex items-center justify-between">
@@ -292,16 +269,15 @@ export default function Products() {
                         : "N/A"}
                     </span>
                     <button
-                      onClick={() => handleToggleCart(product)}
+                      onClick={() => setCartProduct(product)}
+                      disabled={product.outOfStock}
                       className={`px-4 py-2 rounded-full font-poppins text-sm font-medium transition-all duration-300 ${
-                        isInCart(product.id)
-                          ? "bg-sage text-white hover:bg-green-700"
+                        product.outOfStock
+                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                           : "bg-terracotta text-white hover:bg-terracottaDark"
                       }`}
                     >
-                      {isInCart(product.id)
-                        ? "Remove from Cart"
-                        : "Add to Cart"}
+                      {product.outOfStock ? "Out of Stock" : "Add to Cart"}
                     </button>
                   </div>
                 </div>
@@ -363,6 +339,14 @@ export default function Products() {
               Next
             </button>
           </div>
+        )}
+
+        {/* Add to Cart Popup */}
+        {cartProduct && (
+          <AddToCartModal
+            product={cartProduct}
+            onClose={() => setCartProduct(null)}
+          />
         )}
 
         {/* Image Popup */}
