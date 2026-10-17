@@ -110,13 +110,13 @@ export default function Navbar() {
           <li>
             <Link
               className="hover:text-terracotta transition-colors"
-              to="/track-order"
+              to="/myOrders"
               onClick={() => {
                 setIsOpen(false);
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
             >
-              My Order
+              My Orders
             </Link>
           </li>
           <li>
@@ -259,13 +259,13 @@ export default function Navbar() {
           <li>
             <Link
               className="hover:text-terracotta transition-colors"
-              to="/track-order"
+              to="/myOrders"
               onClick={() => {
                 setIsOpen(false);
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
             >
-              My Order
+              My Orders
             </Link>
           </li>
           <li>

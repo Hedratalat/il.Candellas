@@ -5,11 +5,11 @@ import ButtonScroll from "./ButtonScroll/ButtonScroll";
 import ProtectedRoute from "./pages/ProtectedRoute";
 import "./App.css";
 import ShippingDash from "./pages/ShippingDash";
+import MyOrders from "./pages/MyOrders";
 
 // Lazy load pages
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login"));
-const VerifyEmail = lazy(() => import("./pages/VerifyEmail"));
 const About = lazy(() => import("./pages/About"));
 const Contact = lazy(() => import("./pages/Contact"));
 const Products = lazy(() => import("./pages/Products"));
@@ -38,10 +38,10 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/verifyEmail" element={<VerifyEmail />} />
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/products" element={<Products />} />
+            <Route path="/myOrders" element={<MyOrders />} />
             <Route path="/favorites" element={<Favorites />} />
             <Route path="/cart" element={<Cart />} />
             <Route path="/checkout" element={<Checkout />} />

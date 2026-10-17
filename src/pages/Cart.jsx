@@ -16,6 +16,7 @@ import {
   Loader2,
   Plus,
   Minus,
+  ArrowRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
@@ -24,6 +25,11 @@ import Footer from "../Footer/Footer";
 const round3 = (n) => Number(n.toFixed(3));
 const getQty = (item) => Number(item.quantity) || 1;
 const getUnit = (item) => Number(item.unitPrice ?? item.price) || 0;
+
+const arrowVariants = {
+  initial: { x: 0 },
+  hover: { x: 5 },
+};
 
 export default function Cart() {
   const [cartItems, setCartItems] = useState([]);
@@ -34,24 +40,32 @@ export default function Cart() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let unsubscribeCart = null;
+
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+      if (unsubscribeCart) {
+        unsubscribeCart();
+        unsubscribeCart = null;
+      }
       if (user) {
         const cartRef = collection(db, "users", user.uid, "cart");
-        const unsubscribeCart = onSnapshot(cartRef, (snapshot) => {
+        unsubscribeCart = onSnapshot(cartRef, (snapshot) => {
           // id = رقم المنتج، docId = رقم السطر في السلة
           setCartItems(
             snapshot.docs.map((d) => ({ ...d.data(), docId: d.id })),
           );
           setLoading(false);
         });
-        return () => unsubscribeCart();
       } else {
         setCartItems([]);
         setLoading(false);
       }
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeCart) unsubscribeCart();
+    };
   }, []);
 
   const handleRemove = async (docId) => {
@@ -109,7 +123,7 @@ export default function Cart() {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen  px-4 sm:px-6 md:px-10 lg:px-20 py-10 font-poppins">
+      <div className="mt-20 px-6 md:px-12 font-poppins text-center">
         <motion.h2
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -125,11 +139,39 @@ export default function Cart() {
             <Loader2 className="animate-spin text-sage" size={60} />
           </div>
         ) : cartItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-[60vh] text-center px-4">
-            <ShoppingCart size={90} className="text-sage mb-4" />
-            <p className="text-lg sm:text-xl text-brown font-medium">
-              Your cart is empty
+          /* 🛒 Empty cart */
+          <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
+            <motion.div
+              animate={{ y: [0, -10, 0] }}
+              transition={{ repeat: Infinity, duration: 2 }}
+            >
+              <ShoppingCart size={100} className="text-sage mb-4" />
+            </motion.div>
+            <p className="text-xl font-medium text-brown font-poppins">
+              Your cart is empty.
             </p>
+
+            <motion.button
+              whileHover="hover"
+              whileTap={{ scale: 0.95 }}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3, duration: 0.6 }}
+              onClick={() => navigate("/products")}
+              className="group mt-6 bg-white text-terracotta font-poppins px-8 py-3
+    rounded-full shadow-lg flex items-center justify-center gap-3 mx-auto
+    hover:bg-terracotta hover:text-white transition-all duration-300"
+            >
+              <span className="text-lg font-semibold tracking-wide">
+                Browse Products
+              </span>
+              <motion.span
+                variants={arrowVariants}
+                transition={{ type: "spring", stiffness: 300 }}
+              >
+                <ArrowRight size={22} />
+              </motion.span>
+            </motion.button>
           </div>
         ) : (
           <div className="max-w-6xl mx-auto bg-white rounded-2xl shadow-lg p-4 sm:p-6 lg:p-10">
@@ -141,20 +183,35 @@ export default function Cart() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className="flex flex-col sm:flex-row items-center sm:items-start gap-4 border border-beige p-4 rounded-xl shadow-sm hover:shadow-md transition"
+                  className="relative flex flex-col sm:flex-row items-center sm:items-start gap-4 border border-beige p-4 rounded-xl shadow-sm hover:shadow-md transition"
                 >
+                  {/* 🗑 Delete (top corner) */}
+                  <button
+                    onClick={() => handleRemove(item.docId)}
+                    disabled={deletingId === item.docId}
+                    aria-label="Remove item"
+                    className={`absolute top-3 right-3 z-10 p-1.5 rounded-full shadow-md ${
+                      deletingId === item.docId
+                        ? "bg-gray-300"
+                        : "bg-terracotta hover:bg-terracottaDark"
+                    } text-white transition`}
+                  >
+                    {deletingId === item.docId ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={16} />
+                    )}
+                  </button>
+
                   <img
                     src={item.imageUrl}
                     alt={item.name}
                     className="w-full sm:w-24 h-40 sm:h-24 object-cover rounded-lg"
                   />
-                  <div className="flex-1 text-center sm:text-left">
-                    <h3 className="text-lg font-semibold text-brown">
+                  <div className="flex-1 text-center sm:text-left sm:pr-8">
+                    <h3 className="text-lg font-semibold text-brown mb-2">
                       {item.name}
                     </h3>
-                    <p className="text-warmGray text-sm mb-2 line-clamp-2">
-                      {item.description}
-                    </p>
 
                     {/* الاختيارات */}
                     {item.color && (
@@ -222,21 +279,6 @@ export default function Cart() {
                       </button>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleRemove(item.docId)}
-                    disabled={deletingId === item.docId}
-                    className={`p-2 rounded-full ${
-                      deletingId === item.docId
-                        ? "bg-gray-300"
-                        : "bg-terracotta hover:bg-terracottaDark"
-                    } text-white transition`}
-                  >
-                    {deletingId === item.docId ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={18} />
-                    )}
-                  </button>
                 </motion.div>
               ))}
             </div>
